@@ -1,4 +1,5 @@
 import os
+import re
 from utils.parser import extract_text_from_file
 from utils.embedding import get_embedding_model, generate_embedding
 from utils.similarity import compute_similarity_scores
@@ -11,6 +12,45 @@ LOG_PATH = os.path.join(PROJECT_ROOT, 'logs', 'agent_thoughtlog.txt')
 RECOMMEND_PATH = os.path.join(PROJECT_ROOT, 'outputs', 'recommended_candidates.txt')
 
 DIVIDER = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+
+def extract_candidate_name(filename):
+    """
+    Extract and format candidate name from filename.
+    
+    Args:
+        filename (str): Original filename
+        
+    Returns:
+        str: Properly formatted candidate name (FirstName LastName)
+    """
+    # Remove file extension
+    name = os.path.splitext(filename)[0]
+    
+    # Remove common words that are not part of the name
+    remove_words = ['resume', 'cv', 'application', 'cover', 'letter', 'profile']
+    name_lower = name.lower()
+    
+    for word in remove_words:
+        # Remove the word and any surrounding separators
+        name_lower = re.sub(rf'\b{word}\b', '', name_lower)
+    
+    # Replace common separators with spaces
+    name = re.sub(r'[_-]', ' ', name)
+    
+    # Split into words and filter out empty strings
+    words = [word.strip() for word in name.split() if word.strip()]
+    
+    # If we have at least 2 words, take the first two as first and last name
+    if len(words) >= 2:
+        first_name = words[0].title()
+        last_name = words[1].title()
+        return f"{first_name} {last_name}"
+    elif len(words) == 1:
+        # If only one word, assume it's the full name
+        return words[0].title()
+    else:
+        # Fallback: return the original filename without extension
+        return os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
 
 def log_agentic_flow_start():
     """Log the start of agentic flow with decorative separator."""
@@ -248,7 +288,7 @@ def run_agentic_flow(job_description, resumes, openai_api_key):
     for file in resumes:
         text = extract_text_from_file(file)
         if text.strip():
-            name_only = os.path.splitext(file.name)[0].replace('_', ' ').replace('-', ' ')
+            name_only = extract_candidate_name(file.name)
             resume_names.append(name_only)
             resume_texts.append(text)
         else:
