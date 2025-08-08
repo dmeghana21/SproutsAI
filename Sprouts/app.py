@@ -19,8 +19,8 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 
 job_description = st.text_area("Enter Job Description", height=200)
 uploaded_files = st.file_uploader(
-    "Upload Candidate Resumes (PDF or TXT)",
-    type=["pdf", "txt"],
+    "Upload Candidate Resumes (PDF only)",
+    type=["pdf"],
     accept_multiple_files=True
 )
 
