@@ -147,6 +147,18 @@ streamlit run app.py
 - **Keyword Matches**: Specific skills/technologies found in each resume
 - **AI Summary**: Personalized fit explanation
 - **Download Results**: Export recommendations and logs
+  
+##  Deployment
+
+The app is publicly deployed and accessible here:
+
+ **[Live App URL](https://dmeghana21-sprouts-ai--sproutsapp-urldgi.streamlit.app)**
+
+###  API Key Requirement
+
+- The OpenAI API key is already securely stored in the deployed app via **Streamlit secrets**.
+- **No setup is required for end users.**
+- If you're running the app locally, you'll need to create a `.env` or use `secrets.toml` with your own key.
 
 ##  How It Works
 
