@@ -1,0 +1,24 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2025-08-07T20:16:51.726990] START: Agentic flow initiated with technical keyword extraction and cosine similarity.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2025-08-07T20:16:51.728028] EXTRACT_KEYWORDS: Extracting technical keywords from job description.
+[2025-08-07T20:17:02.433130] TECHNICAL_KEYWORDS: Extracted keywords: ['ai engineer', 'saleshub platform', 'large language models (llms)', 'automation', 'ai-native tooling', 'data wrangling', 'api integration', 'performance monitoring', 'ai-powered product features', 'smart tagging', 'content enrichment', 'ai-based ux workflows', 'rag pipelines', 'embedding flows', 'vector db integrations', 'observable code', 'efficient code', 'backend engineering', 'frontend engineering', 'user-facing applications', 'prompt design', 'versioning', 'testing', 'reuse patterns', 'intelligent ui/ux patterns', 'data scientists', 'ml leads', 'software engineering', 'fullstack environments', 'backend environments', 'openai', 'claude', 'langchain', 'llamaindex', 'vector databases', 'pinecone', 'weaviate', 'qdrant', 'prompt engineering', 'retrieval-augmented generation pipelines', 'python', 'typescript', 'node', 'fastapi', 'flask', 'apis', 'rest', 'graphql', 'llm-powered features', 'data labeling', 'synthetic data generation', 'ai evaluation frameworks', 'vector store security', 'access controls', 'multitenancy', 'devops', 'observability']
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2025-08-07T20:17:02.641397] RESUME_COUNT: Processed 11 resumes: ['Aaron Evans Cruz', 'Abhilash Resume', 'Abhishak Resume', 'aleksandr nikitin', 'CPB FullStack Resume', 'cristian garcia', 'Jillani Resume', 'piotr migdal resume', 'Resume Elias Weston Farber', 'RICHA PRAKASH', 'Serkov Vladislav']
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2025-08-07T20:17:02.643605] EMBEDDING_AND_SIMILARITY: Generating embeddings and computing cosine similarity scores.
+[2025-08-07T20:17:46.382263] SIMILARITY_SCORES:
+  1. Jillani Resume: 0.4586
+  2. Aaron Evans Cruz: 0.4495
+  3. CPB FullStack Resume: 0.4412
+  4. RICHA PRAKASH: 0.4392
+  5. Serkov Vladislav: 0.4385
+  6. piotr migdal resume: 0.4342
+  7. Resume Elias Weston Farber: 0.4082
+  8. aleksandr nikitin: 0.3963
+  9. cristian garcia: 0.3725
+  10. Abhilash Resume: 0.3624
+  11. Abhishak Resume: 0.2645
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2025-08-07T20:17:46.385125] END: Agentic flow completed. **Top candidate: Jillani Resume with score 0.4586**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

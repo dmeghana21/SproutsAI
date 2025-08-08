@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+.env
+agent_thought_log.txt
