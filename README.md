@@ -11,8 +11,8 @@ A sophisticated AI-powered system that intelligently matches job descriptions wi
 - **AI-Generated Summaries**: Provides personalized fit summaries for each candidate (GPT-4o)
 - **Multi-Format Support**: Handles PDF resume format
 - **Real-time Processing**: Fast, efficient processing with detailed logging
-- **Robust Fallback System**: Graceful fallback for keyword extraction when GPT-4 is unavailable
-- **Smart Name Extraction**: Automatically extracts and formats candidate names from filenames
+- **Adaptive Top-N Results**: Returns top 5–10 candidates based on how many resumes are uploaded
+- **Smart Name Extraction**: Extracts names from resume content first (top lines), with a clean filename fallback
 
 ### Technical Highlights
 - **Adaptive Keyword Extraction**: Dynamic keyword extraction using GPT-4's contextual understanding
@@ -180,8 +180,8 @@ if gpt_fails:
 
 ### 2. **Smart Name Extraction**
 ```python
-# Extract and format candidate names from filenames
-name = extract_candidate_name(filename)
+# Prefer name from resume text; fallback to filename
+name = extract_candidate_name_from_text(resume_text) or extract_candidate_name(filename)
 # Examples:
 # 'piotr_migdal_resume.pdf' → 'Piotr Migdal'
 # 'cristian_garcia.pdf' → 'Cristian Garcia'
@@ -230,7 +230,7 @@ log_agentic_flow_end()             # END with top candidate highlight
 
 ### Candidate Results Display
 ```
-Top 5 Recommended Candidates
+Top N Recommended Candidates
 
 1. Aleksandr Nikitin
 AI Summary: Aleksandr Nikitin is a strong fit for the role at Pragmatike due to his extensive experience in developing and deploying data-driven solutions, as demonstrated by his work at Tochka Bank where he led the design and implementation of machine learning models. His proficiency in Python and familiarity with cloud environments, combined with his strong communication and team collaboration skills, align well with the job's requirements. Additionally, his background in leading projects in high-paced environments and his commitment to professional development in AI/ML systems make him an excellent candidate for contributing to Pragmatike's innovative projects in Cloud Computing, Blockchain, and Artificial Intelligence.

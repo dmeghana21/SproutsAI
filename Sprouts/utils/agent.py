@@ -1,5 +1,6 @@
 import os
 import re
+from typing import Optional
 from utils.parser import extract_text_from_file
 from utils.embedding import get_embedding_model, generate_embedding
 from utils.similarity import compute_similarity_scores
@@ -13,44 +14,89 @@ RECOMMEND_PATH = os.path.join(PROJECT_ROOT, 'outputs', 'recommended_candidates.t
 
 DIVIDER = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
 
+JOB_TITLE_WORDS = {
+    'developer', 'engineer', 'fullstack', 'full-stack', 'frontend', 'front-end', 'backend', 'back-end',
+    'data', 'scientist', 'ml', 'ai', 'architect', 'lead', 'senior', 'junior', 'intern', 'manager',
+    'consultant', 'analyst', 'software', 'devops', 'sdet', 'tester'
+}
+
+IGNORED_LINE_MARKERS = {
+    'resume', 'curriculum vitae', 'cv', 'profile', 'summary', 'objective', 'experience', 'education',
+    'linkedin', 'github', 'email', 'phone', 'contact'
+}
+
+PLACEHOLDER_TOKENS = {
+    'first', 'surname', 'lastname', 'firstname', 'last', 'name', 'middle', 'given', 'family',
+    'firstName'.lower(), 'lastName'.lower(), 'full', 'full name'
+}
+
+# Unicode letter-only token regex (excludes digits and underscore)
+LETTER_TOKEN_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+def _format_first_last(tokens):
+    first = tokens[0].title()
+    last = tokens[-1].title() if len(tokens) > 1 else ''
+    return f"{first} {last}".strip()
+
+def _filter_name_tokens(tokens):
+    filtered = [t for t in tokens if t and t.lower() not in PLACEHOLDER_TOKENS]
+    return filtered
+
+def extract_candidate_name_from_text(resume_text: str) -> Optional[str]:
+    """
+    Try to extract the candidate name from the resume text by scanning the top lines.
+    Returns first+last formatted name if confidently found, else None.
+    """
+    if not resume_text:
+        return None
+    lines = [ln.strip() for ln in resume_text.splitlines()]
+    # Scan only the first ~30 lines to find a clean name line
+    for line in lines[:30]:
+        if not line:
+            continue
+        low = line.lower()
+        # Check for explicit 'name:' patterns
+        if 'name:' in low:
+            after = line.split(':', 1)[1].strip()
+            tokens = _filter_name_tokens(LETTER_TOKEN_RE.findall(after))
+            if len(tokens) >= 2 and not any(tok.lower() in JOB_TITLE_WORDS for tok in tokens):
+                return _format_first_last(tokens)
+            else:
+                continue
+        # skip lines with obvious non-name markers
+        if any(marker in low for marker in IGNORED_LINE_MARKERS):
+            continue
+        if '@' in line or any(ch.isdigit() for ch in line):
+            continue
+        # allow letters (including unicode) and filter placeholders/job titles
+        tokens = _filter_name_tokens(LETTER_TOKEN_RE.findall(line))
+        if len(tokens) >= 2 and 2 <= len(tokens) <= 4:
+            if any(tok.lower() in JOB_TITLE_WORDS for tok in tokens):
+                continue
+            return _format_first_last(tokens)
+    return None
+
 def extract_candidate_name(filename):
     """
     Extract and format candidate name from filename.
-    
-    Args:
-        filename (str): Original filename
-        
-    Returns:
-        str: Properly formatted candidate name (FirstName LastName)
+    Returns FirstName LastName style.
     """
-    # Remove file extension
-    name = os.path.splitext(filename)[0]
-    
-    # Remove common words that are not part of the name
-    remove_words = ['resume', 'cv', 'application', 'cover', 'letter', 'profile']
-    name_lower = name.lower()
-    
-    for word in remove_words:
-        # Remove the word and any surrounding separators
-        name_lower = re.sub(rf'\b{word}\b', '', name_lower)
-    
-    # Replace common separators with spaces
-    name = re.sub(r'[_-]', ' ', name)
-    
-    # Split into words and filter out empty strings
-    words = [word.strip() for word in name.split() if word.strip()]
-    
-    # If we have at least 2 words, take the first two as first and last name
-    if len(words) >= 2:
-        first_name = words[0].title()
-        last_name = words[1].title()
-        return f"{first_name} {last_name}"
-    elif len(words) == 1:
-        # If only one word, assume it's the full name
-        return words[0].title()
-    else:
-        # Fallback: return the original filename without extension
-        return os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
+    # Remove file extension and normalize separators
+    base = os.path.splitext(filename)[0]
+    base = re.sub(r'[_.-]+', ' ', base)
+    # Lowercase for cleanup
+    cleaned = base.lower()
+    # Remove common non-name words and role markers and placeholders
+    remove_words = {'resume', 'cv', 'application', 'cover', 'letter', 'profile'} | JOB_TITLE_WORDS | PLACEHOLDER_TOKENS
+    cleaned = ' '.join(w for w in cleaned.split() if w and w not in remove_words)
+    # Tokenize letters only (unicode-aware) and filter placeholders again
+    tokens = _filter_name_tokens(LETTER_TOKEN_RE.findall(cleaned))
+    if len(tokens) >= 2:
+        return _format_first_last(tokens)
+    if len(tokens) == 1:
+        return tokens[0].title()
+    # Fallback to title-cased base if nothing else
+    return base.title()
 
 def log_agentic_flow_start():
     """Log the start of agentic flow with decorative separator."""
@@ -116,31 +162,31 @@ def extract_keywords_enhanced(text, top_n=20):
         'machine learning', 'deep learning', 'nlp', 'tensorflow', 'pytorch', 'pandas', 'numpy', 'scikit-learn',
         'agile', 'scrum', 'ci/cd', 'jenkins', 'terraform', 'ansible', 'prometheus', 'grafana'
     }
-    
+
     # Extract keywords by direct matching
     text_lower = text.lower()
     found_keywords = [term for term in TECHNICAL_TERMS if term in text_lower]
-    
+
     return found_keywords
 
 def extract_technical_keywords(job_text, openai_api_key):
     """
     Extract necessary technical keywords from job description using GPT.
     No hardcoding - GPT directly understands context and extracts relevant terms.
-    
+
     Args:
         job_text (str): The job description text
         openai_api_key (str): OpenAI API key
-        
+
     Returns:
         list: Clean list of relevant technical keywords for candidate shortlisting
     """
     if not openai_api_key:
         log_agent_thought('ERROR', 'OpenAI API key not provided for keyword extraction')
         return []
-    
+
     client = openai.OpenAI(api_key=openai_api_key)
-    
+
     prompt = (
         "You are an expert technical recruiter analyzing a job description. "
         "Extract ONLY the technical keywords, skills, tools, and technologies that are "
@@ -156,7 +202,7 @@ def extract_technical_keywords(job_text, openai_api_key):
         f"Job Description: {job_text}\n\n"
         "Technical Keywords:"
     )
-    
+
     try:
         response = client.chat.completions.create(
             model="gpt-4",
@@ -164,18 +210,18 @@ def extract_technical_keywords(job_text, openai_api_key):
             temperature=0.1,
             max_tokens=300
         )
-        
+
         keywords_text = response.choices[0].message.content.strip()
-        
+
         # Clean and process keywords
         keywords = []
         for kw in keywords_text.split(','):
             kw = kw.strip().lower()
             if kw and len(kw) > 1 and not kw.endswith('.'):
                 keywords.append(kw)
-        
+
         return keywords
-        
+
     except Exception as e:
         log_agent_thought('ERROR', f'GPT keyword extraction failed: {e}')
         # Fallback to enhanced extraction
@@ -184,11 +230,11 @@ def extract_technical_keywords(job_text, openai_api_key):
 def embed_text(text, model):
     """
     Embed text using the specified embedding model.
-    
+
     Args:
         text (str): Text to embed
         model: Embedding model
-        
+
     Returns:
         numpy.ndarray: Text embedding
     """
@@ -197,11 +243,11 @@ def embed_text(text, model):
 def calculate_cosine_similarity(job_embedding, resume_embedding):
     """
     Calculate cosine similarity between job and resume embeddings.
-    
+
     Args:
         job_embedding: Job text embedding
         resume_embedding: Resume text embedding
-        
+
     Returns:
         float: Cosine similarity score
     """
@@ -212,20 +258,20 @@ def find_keyword_matches(resume_text, job_keywords):
     """
     Find which keywords from the job description match in the resume.
     Searches through the complete resume text for comprehensive matching.
-    
+
     Args:
         resume_text (str): Resume text
         job_keywords (list): Keywords extracted from job description
-        
+
     Returns:
         list: List of keywords that match in the resume
     """
     resume_lower = resume_text.lower()
     matched_keywords = []
-    
+
     for keyword in job_keywords:
         keyword_lower = keyword.lower().strip()
-        
+
         # Check for exact match in complete resume
         if keyword_lower in resume_lower:
             matched_keywords.append(keyword)
@@ -249,30 +295,30 @@ def find_keyword_matches(resume_text, job_keywords):
                 variations.extend(['apis', 'rest api', 'graphql'])
             elif keyword_lower == 'sql':
                 variations.extend(['mysql', 'postgresql', 'sqlite', 'database'])
-            
+
             # Check if any variation exists in resume
             for variation in variations:
                 if variation in resume_lower:
                     matched_keywords.append(keyword)
                     break
-    
+
     return matched_keywords
 
 def run_agentic_flow(job_description, resumes, openai_api_key):
     """
     Main function to process job description and resumes, returning cosine similarity scores.
-    
+
     Args:
         job_description (str): Job description text
         resumes (list): List of resume files
         openai_api_key (str): OpenAI API key (for summary generation)
-        
+
     Returns:
         list: List of candidate dictionaries with cosine similarity scores
     """
     clear_logs()
     log_agentic_flow_start()
-    
+
     # Step 1: Extract technical keywords from job description
     log_step_header('EXTRACT_KEYWORDS', 'Extracting technical keywords from job description.')
     job_text = job_description.strip()
@@ -280,40 +326,41 @@ def run_agentic_flow(job_description, resumes, openai_api_key):
     keywords = extract_technical_keywords(job_text, openai_api_key)
     # Returns only what's relevant for candidate shortlisting
     log_technical_keywords(keywords)
-    
+
     # Step 2: Read resumes
     resume_texts = []
     resume_names = []
-    
+
     for file in resumes:
         text = extract_text_from_file(file)
         if text.strip():
-            name_only = extract_candidate_name(file.name)
+            name_from_text = extract_candidate_name_from_text(text)
+            name_only = name_from_text if name_from_text else extract_candidate_name(file.name)
             resume_names.append(name_only)
             resume_texts.append(text)
         else:
             log_agent_thought('READ_RESUME', f'Failed to extract content from {file.name}.')
-    
+
     log_resume_processing(resume_names)
-    
+
     # Step 3: Generate embeddings and compute similarity
     log_step_header('EMBEDDING_AND_SIMILARITY', 'Generating embeddings and computing cosine similarity scores.')
     model = get_embedding_model()
     job_embedding = embed_text(job_text, model)
-    
+
     # Calculate cosine similarity scores for each resume
     candidates = []
     for idx, (name, text) in enumerate(zip(resume_names, resume_texts)):
         resume_embedding = embed_text(text, model)
         cosine_score = calculate_cosine_similarity(job_embedding, resume_embedding)
-        
+
         # Find keyword matches for this resume
         matched_keywords = find_keyword_matches(text, keywords)
         keyword_match_count = len(matched_keywords)
-        
+
         # Generate summary
         summary = generate_fit_summary(job_text, text)
-        
+
         candidates.append({
             'name': name,
             'score': float(cosine_score),
@@ -322,23 +369,27 @@ def run_agentic_flow(job_description, resumes, openai_api_key):
             'keyword_count': keyword_match_count,
             'summary': summary
         })
-    
+
     # Sort by cosine similarity score
     candidates.sort(key=lambda x: x['score'], reverse=True)
     log_similarity_scores(candidates)
     log_agentic_flow_end(candidates[0])
-    
+
+    # Determine how many candidates to return: clamp between 5 and 10 based on resume count
+    total_candidates = len(candidates)
+    top_n = max(5, min(10, total_candidates))
+
     # Write recommendations file
     with open(RECOMMEND_PATH, 'w', encoding='utf-8') as f:
-        f.write('Top Recommended Candidates\n')
+        f.write(f'Top {top_n} Recommended Candidates\n')
         f.write(f"{DIVIDER}\n")
         f.write(f"Technical Keywords: {', '.join(keywords)}\n")
         f.write(f"{DIVIDER}\n")
-        for c in candidates[:5]:
+        for c in candidates[:top_n]:
             f.write(f"Name: {c['name']}\n")
             f.write(f"Cosine Similarity Score: {c['similarity']:.4f}\n")
             f.write(f"Keyword Matches ({c['keyword_count']}): {', '.join(c['keyword_matches'])}\n")
             f.write(f"Summary: {c['summary']}\n")
             f.write(f"{DIVIDER}\n")
-    
-    return candidates[:5]
+
+    return candidates[:top_n]
