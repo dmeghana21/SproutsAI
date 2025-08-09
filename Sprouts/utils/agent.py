@@ -2,11 +2,12 @@ import os
 import re
 from typing import Optional
 from utils.parser import extract_text_from_file
-from utils.embedding import get_embedding_model, generate_embedding
+from utils.embedding import get_embedding_model, generate_embedding, generate_chunk_embeddings
 from utils.similarity import compute_similarity_scores
 from utils.gpt_summary import generate_fit_summary
 from datetime import datetime
 import openai
+import numpy as np
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 LOG_PATH = os.path.join(PROJECT_ROOT, 'logs', 'agent_thoughtlog.txt')
@@ -14,89 +15,115 @@ RECOMMEND_PATH = os.path.join(PROJECT_ROOT, 'outputs', 'recommended_candidates.t
 
 DIVIDER = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
 
-JOB_TITLE_WORDS = {
-    'developer', 'engineer', 'fullstack', 'full-stack', 'frontend', 'front-end', 'backend', 'back-end',
-    'data', 'scientist', 'ml', 'ai', 'architect', 'lead', 'senior', 'junior', 'intern', 'manager',
-    'consultant', 'analyst', 'software', 'devops', 'sdet', 'tester'
+ROLE_NOISE_WORDS = {
+    'resume', 'cv', 'application', 'cover', 'letter', 'profile', 'final', 'updated', 'draft',
+    'v1', 'v2', 'v3', 'copy', 'pdf', 'doc', 'docx', 'txt', 'new', 'old', 'latest', 'version',
+    'fullstack', 'full-stack', 'full', 'stack', 'frontend', 'front-end', 'backend', 'back-end', 'developer',
+    'engineer', 'software', 'swe', 'intern', 'senior', 'jr', 'sr', 'lead', 'manager', 'data',
+    'scientist', 'analyst', 'ai', 'ml', 'dl', 'cloud', 'devops',
 }
 
-IGNORED_LINE_MARKERS = {
-    'resume', 'curriculum vitae', 'cv', 'profile', 'summary', 'objective', 'experience', 'education',
-    'linkedin', 'github', 'email', 'phone', 'contact'
+BRAND_WORDS = {
+    'github', 'stackexchange', 'stackoverflow', 'linkedin', 'leetcode', 'kaggle',
+    'medium', 'twitter', 'gmail', 'outlook', 'yahoo', 'google', 'facebook', 'instagram'
 }
 
-PLACEHOLDER_TOKENS = {
-    'first', 'surname', 'lastname', 'firstname', 'last', 'name', 'middle', 'given', 'family',
-    'firstName'.lower(), 'lastName'.lower(), 'full', 'full name'
+NAME_LINE_BLOCKLIST = {
+    'resume', 'curriculum vitae', 'cover letter', 'portfolio', 'table of contents', 'experience',
+    'education', 'skills', 'projects', 'summary', 'objective'
 }
 
-# Unicode letter-only token regex (excludes digits and underscore)
-LETTER_TOKEN_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+NAME_TOKEN_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z\-']+$")
 
-def _format_first_last(tokens):
-    first = tokens[0].title()
-    last = tokens[-1].title() if len(tokens) > 1 else ''
-    return f"{first} {last}".strip()
 
-def _filter_name_tokens(tokens):
-    filtered = [t for t in tokens if t and t.lower() not in PLACEHOLDER_TOKENS]
-    return filtered
+def _clean_filename_to_tokens(filename: str) -> list:
+    base = os.path.splitext(filename)[0]
+    base = base.replace('.', ' ')
+    base = re.sub(r'[\-_]+', ' ', base)
+    base = re.sub(r'\s+', ' ', base).strip()
+    tokens = [t for t in base.split(' ') if t]
+    tokens_filtered = [t for t in tokens if t.lower() not in ROLE_NOISE_WORDS | BRAND_WORDS]
+    tokens_filtered = [t for t in tokens_filtered if NAME_TOKEN_PATTERN.match(t)]
+    return tokens_filtered
 
-def extract_candidate_name_from_text(resume_text: str) -> Optional[str]:
+
+def _seems_name_token(token: str) -> bool:
+    tl = token.lower()
+    if len(tl) < 2:
+        return False
+    if token.isupper():
+        return False
+    if tl in ROLE_NOISE_WORDS or tl in BRAND_WORDS:
+        return False
+    if not any(v in tl for v in 'aeiou'):
+        return False
+    return True
+
+
+def _name_from_filename(filename: str) -> str:
+    tokens = _clean_filename_to_tokens(filename)
+    name_tokens = [t for t in tokens if _seems_name_token(t)]
+    if len(name_tokens) >= 2:
+        return f"{name_tokens[0].title()} {name_tokens[1].title()}"
+    if len(name_tokens) == 1:
+        return name_tokens[0].title()
+    # Fallback: best-effort title-cased filename without separators
+    fallback = os.path.splitext(filename)[0]
+    fallback = re.sub(r'[\-_]+', ' ', fallback)
+    fallback = re.sub(r'\s+', ' ', fallback).strip()
+    parts = [p for p in fallback.split(' ') if p and p.lower() not in ROLE_NOISE_WORDS | BRAND_WORDS]
+    if len(parts) >= 2:
+        return f"{parts[0].title()} {parts[1].title()}"
+    if parts:
+        return parts[0].title()
+    return fallback.title()
+
+
+def extract_candidate_name(filename: str, resume_text: Optional[str] = None) -> str:
     """
-    Try to extract the candidate name from the resume text by scanning the top lines.
-    Returns first+last formatted name if confidently found, else None.
+    Extract and format candidate name, prioritizing filename; fallback to resume text when needed.
+    Returns: 'First Last' when possible, title-cased.
+    """
+    # First, try deriving from filename
+    filename_guess = _name_from_filename(filename)
+    if filename_guess and len(filename_guess.split()) >= 2:
+        return filename_guess
+
+    # Fallback to inferring from resume text
+    if resume_text:
+        inferred = infer_name_from_text(resume_text)
+        if inferred:
+            return inferred
+
+    return filename_guess
+
+
+def infer_name_from_text(resume_text: str) -> str:
+    """
+    Infer candidate name from resume text by scanning the first lines for a plausible name.
     """
     if not resume_text:
-        return None
-    lines = [ln.strip() for ln in resume_text.splitlines()]
-    # Scan only the first ~30 lines to find a clean name line
-    for line in lines[:30]:
-        if not line:
+        return ""
+    lines = [l.strip() for l in resume_text.splitlines() if l.strip()]
+    # Look at the first ~20 non-empty lines
+    for raw in lines[:20]:
+        line = re.sub(r"[|,/\\]+", " ", raw)
+        line = re.sub(r"\s+", " ", line).strip()
+        lower = line.lower()
+        if any(bl in lower for bl in NAME_LINE_BLOCKLIST):
             continue
-        low = line.lower()
-        # Check for explicit 'name:' patterns
-        if 'name:' in low:
-            after = line.split(':', 1)[1].strip()
-            tokens = _filter_name_tokens(LETTER_TOKEN_RE.findall(after))
-            if len(tokens) >= 2 and not any(tok.lower() in JOB_TITLE_WORDS for tok in tokens):
-                return _format_first_last(tokens)
-            else:
+        if any(b in lower for b in BRAND_WORDS):
+            continue
+        parts = [p for p in line.split(' ') if p]
+        if 2 <= len(parts) <= 4 and all(NAME_TOKEN_PATTERN.match(p) for p in parts):
+            # Avoid role and brand words
+            if any(p.lower() in ROLE_NOISE_WORDS or p.lower() in BRAND_WORDS for p in parts):
                 continue
-        # skip lines with obvious non-name markers
-        if any(marker in low for marker in IGNORED_LINE_MARKERS):
-            continue
-        if '@' in line or any(ch.isdigit() for ch in line):
-            continue
-        # allow letters (including unicode) and filter placeholders/job titles
-        tokens = _filter_name_tokens(LETTER_TOKEN_RE.findall(line))
-        if len(tokens) >= 2 and 2 <= len(tokens) <= 4:
-            if any(tok.lower() in JOB_TITLE_WORDS for tok in tokens):
-                continue
-            return _format_first_last(tokens)
-    return None
+            # Prefer Title Case tokens
+            if parts[0][0].isalpha() and parts[1][0].isalpha():
+                return f"{parts[0].title()} {parts[1].title()}"
+    return ""
 
-def extract_candidate_name(filename):
-    """
-    Extract and format candidate name from filename.
-    Returns FirstName LastName style.
-    """
-    # Remove file extension and normalize separators
-    base = os.path.splitext(filename)[0]
-    base = re.sub(r'[_.-]+', ' ', base)
-    # Lowercase for cleanup
-    cleaned = base.lower()
-    # Remove common non-name words and role markers and placeholders
-    remove_words = {'resume', 'cv', 'application', 'cover', 'letter', 'profile'} | JOB_TITLE_WORDS | PLACEHOLDER_TOKENS
-    cleaned = ' '.join(w for w in cleaned.split() if w and w not in remove_words)
-    # Tokenize letters only (unicode-aware) and filter placeholders again
-    tokens = _filter_name_tokens(LETTER_TOKEN_RE.findall(cleaned))
-    if len(tokens) >= 2:
-        return _format_first_last(tokens)
-    if len(tokens) == 1:
-        return tokens[0].title()
-    # Fallback to title-cased base if nothing else
-    return base.title()
 
 def log_agentic_flow_start():
     """Log the start of agentic flow with decorative separator."""
@@ -205,7 +232,7 @@ def extract_technical_keywords(job_text, openai_api_key):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=300
@@ -256,51 +283,91 @@ def calculate_cosine_similarity(job_embedding, resume_embedding):
 
 def find_keyword_matches(resume_text, job_keywords):
     """
-    Find which keywords from the job description match in the resume.
-    Searches through the complete resume text for comprehensive matching.
+    Enhanced JD→Resume keyword matching with conservative normalization and vetted variants.
+    - Case-insensitive
+    - Multi-word phrases matched as phrases; single words use word boundaries
+    - Handles a small set of safe variants (e.g., "data science"↔"data scientist", "jupyter notebook"↔"jupyter")
+    - Strict terms must appear verbatim in the resume (except SAR alternative noted below)
+    - No new keywords introduced; if uncertain, exclude
 
-    Args:
-        resume_text (str): Resume text
-        job_keywords (list): Keywords extracted from job description
-
-    Returns:
-        list: List of keywords that match in the resume
+    Returns the JD keywords (original casing) that are supported by the resume text.
     """
+    import re
+
+    def normalize(text: str) -> str:
+        t = text.lower()
+        t = re.sub(r"[\-_]", " ", t)
+        t = re.sub(r"\s+", " ", t).strip()
+        return t
+
     resume_lower = resume_text.lower()
+    resume_norm = normalize(resume_text)
+
     matched_keywords = []
 
+    # Terms that must appear exactly as written in the resume (case-insensitive)
+    # Exception: allow 'sar' as an accepted alternative for 'synthetic aperture radar'
+    strict_terms = {
+        'synthetic aperture radar',
+        'remote sensing',
+        'intelligence community',
+        'ts/sci',
+        'ci poly',
+        'databricks',
+    }
+
+    # Vetted equivalences for non-strict terms
+    equivalence_map = {
+        'data science': ['data science', 'data scientist'],
+        'script development': ['script development', 'scripts', 'scripting'],
+        'presentation': ['presentation', 'presented', 'presentations', 'lecturing', 'workshops'],
+        'jupyter notebook': ['jupyter notebook', 'jupyter'],
+        'machine learning': ['machine learning', 'ml'],
+        'artificial intelligence': ['artificial intelligence', 'ai'],
+        'api': ['api', 'apis', 'rest api', 'graphql'],
+        'sql': ['sql', 'mysql', 'postgresql', 'sqlite', 'database'],
+        'ci/cd': ['ci/cd', 'cicd', 'ci cd'],
+        'javascript': ['javascript', 'js', 'node.js', 'nodejs'],
+    }
+
+    def contains_phrase(text: str, phrase: str) -> bool:
+        return phrase in text
+
+    def contains_word(text: str, word: str) -> bool:
+        return re.search(rf"\b{re.escape(word)}\b", text) is not None
+
     for keyword in job_keywords:
-        keyword_lower = keyword.lower().strip()
+        kw = keyword.strip()
+        if not kw:
+            continue
+        kw_lower = kw.lower()
+        kw_norm = normalize(kw)
 
-        # Check for exact match in complete resume
-        if keyword_lower in resume_lower:
-            matched_keywords.append(keyword)
-        # Check for word boundary matches (more accurate)
-        elif ' ' in keyword_lower:
-            words = keyword_lower.split()
-            # Check if all words from compound keyword exist in resume
-            if all(word in resume_lower for word in words):
-                matched_keywords.append(keyword)
-        # Check for variations and abbreviations
-        else:
-            # Handle common variations
-            variations = [keyword_lower]
-            if keyword_lower == 'python':
-                variations.extend(['py', 'python3', 'python2'])
-            elif keyword_lower == 'javascript':
-                variations.extend(['js', 'node.js', 'nodejs'])
-            elif keyword_lower == 'machine learning':
-                variations.extend(['ml', 'ai', 'artificial intelligence'])
-            elif keyword_lower == 'api':
-                variations.extend(['apis', 'rest api', 'graphql'])
-            elif keyword_lower == 'sql':
-                variations.extend(['mysql', 'postgresql', 'sqlite', 'database'])
-
-            # Check if any variation exists in resume
-            for variation in variations:
-                if variation in resume_lower:
+        # Strict terms: require verbatim presence in resume_lower; special case for SAR
+        if kw_norm in strict_terms:
+            if kw_norm == 'synthetic aperture radar':
+                if contains_phrase(resume_lower, 'synthetic aperture radar') or contains_word(resume_lower, 'sar'):
                     matched_keywords.append(keyword)
-                    break
+            elif contains_phrase(resume_lower, kw_norm):
+                matched_keywords.append(keyword)
+            continue
+
+        # Non-strict equivalences
+        if kw_norm in equivalence_map:
+            variants = equivalence_map[kw_norm]
+            if any((contains_phrase(resume_norm, normalize(v)) if ' ' in v else contains_word(resume_lower, v.lower())) for v in variants):
+                matched_keywords.append(keyword)
+            continue
+
+        # Default conservative matching
+        if ' ' in kw_norm:
+            # Multi-word: match phrase in normalized resume
+            if contains_phrase(resume_norm, kw_norm):
+                matched_keywords.append(keyword)
+        else:
+            # Single word: word-boundary match; avoid very short tokens
+            if len(kw_norm) >= 3 and contains_word(resume_lower, kw_norm):
+                matched_keywords.append(keyword)
 
     return matched_keywords
 
@@ -334,8 +401,7 @@ def run_agentic_flow(job_description, resumes, openai_api_key):
     for file in resumes:
         text = extract_text_from_file(file)
         if text.strip():
-            name_from_text = extract_candidate_name_from_text(text)
-            name_only = name_from_text if name_from_text else extract_candidate_name(file.name)
+            name_only = extract_candidate_name(file.name, text)
             resume_names.append(name_only)
             resume_texts.append(text)
         else:
@@ -347,6 +413,7 @@ def run_agentic_flow(job_description, resumes, openai_api_key):
     log_step_header('EMBEDDING_AND_SIMILARITY', 'Generating embeddings and computing cosine similarity scores.')
     model = get_embedding_model()
     job_embedding = embed_text(job_text, model)
+    job_chunks = generate_chunk_embeddings(job_text, model)
 
     # Calculate cosine similarity scores for each resume
     candidates = []
@@ -354,17 +421,36 @@ def run_agentic_flow(job_description, resumes, openai_api_key):
         resume_embedding = embed_text(text, model)
         cosine_score = calculate_cosine_similarity(job_embedding, resume_embedding)
 
+        # Chunk-level max similarity (captures localized strong matches)
+        resume_chunks = generate_chunk_embeddings(text, model)
+        if job_chunks and resume_chunks:
+            # Compute max cosine across chunk pairs using dot products (already L2-normalized)
+            max_chunk_sim = 0.0
+            for jv in job_chunks:
+                for rv in resume_chunks:
+                    sim = float(np.dot(np.array(jv), np.array(rv)))
+                    if sim > max_chunk_sim:
+                        max_chunk_sim = sim
+        else:
+            max_chunk_sim = cosine_score
+
         # Find keyword matches for this resume
         matched_keywords = find_keyword_matches(text, keywords)
         keyword_match_count = len(matched_keywords)
 
-        # Generate summary
-        summary = generate_fit_summary(job_text, text)
+        # Generate grounded summary (strictly using resume evidence)
+        summary = generate_fit_summary(job_text, text, matched_keywords)
+
+        # Combined ranking score: weighted blend of document cosine, max chunk sim, and keyword coverage
+        keyword_coverage = (keyword_match_count / max(len(keywords), 1)) if keywords else 0.0
+        combined_score = 0.6 * float(cosine_score) + 0.3 * float(max_chunk_sim) + 0.1 * float(keyword_coverage)
 
         candidates.append({
             'name': name,
-            'score': float(cosine_score),
+            'score': float(combined_score),
             'similarity': float(cosine_score),
+            'max_chunk_similarity': float(max_chunk_sim),
+            'keyword_coverage': float(keyword_coverage),
             'keyword_matches': matched_keywords,
             'keyword_count': keyword_match_count,
             'summary': summary
@@ -375,21 +461,21 @@ def run_agentic_flow(job_description, resumes, openai_api_key):
     log_similarity_scores(candidates)
     log_agentic_flow_end(candidates[0])
 
-    # Determine how many candidates to return: clamp between 5 and 10 based on resume count
-    total_candidates = len(candidates)
-    top_n = max(5, min(10, total_candidates))
+    # Determine how many candidates to return/write
+    # <=5 resumes -> show all; 6-9 resumes -> show all; >=10 -> cap at 10
+    top_k = min(len(candidates), 10)
 
     # Write recommendations file
     with open(RECOMMEND_PATH, 'w', encoding='utf-8') as f:
-        f.write(f'Top {top_n} Recommended Candidates\n')
+        f.write('Top Recommended Candidates\n')
         f.write(f"{DIVIDER}\n")
         f.write(f"Technical Keywords: {', '.join(keywords)}\n")
         f.write(f"{DIVIDER}\n")
-        for c in candidates[:top_n]:
+        for c in candidates[:top_k]:
             f.write(f"Name: {c['name']}\n")
-            f.write(f"Cosine Similarity Score: {c['similarity']:.4f}\n")
+            f.write(f"Overall Rank Score: {c['score']:.4f} | Cosine: {c['similarity']:.4f} | Max-Chunk: {c['max_chunk_similarity']:.4f} | Keyword Coverage: {c['keyword_coverage']:.2f}\n")
             f.write(f"Keyword Matches ({c['keyword_count']}): {', '.join(c['keyword_matches'])}\n")
             f.write(f"Summary: {c['summary']}\n")
             f.write(f"{DIVIDER}\n")
 
-    return candidates[:top_n]
+    return candidates[:top_k]

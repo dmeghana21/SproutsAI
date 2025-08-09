@@ -5,17 +5,17 @@ A sophisticated AI-powered system that intelligently matches job descriptions wi
 ##  Features
 
 ### Core Capabilities
-- **Intelligent Keyword Extraction**: Uses GPT-4 to extract relevant technical keywords from job descriptions without hardcoding
+- **Intelligent Keyword Extraction**: Uses GPT-4o to extract relevant technical keywords from job descriptions without hardcoding
 - **Semantic Similarity Matching**: Leverages state-of-the-art embedding models for accurate candidate-job matching
-- **Comprehensive Keyword Matching**: Searches through complete resume text with intelligent variations and abbreviations
+ - **Conservative Keyword Matching**: JD→Resume matching with vetted variants and strict verbatim terms (no hallucination)
 - **AI-Generated Summaries**: Provides personalized fit summaries for each candidate (GPT-4o)
-- **Multi-Format Support**: Handles PDF resume format
+- **PDF Resume Uploads**: Upload and process resumes in PDF format
 - **Real-time Processing**: Fast, efficient processing with detailed logging
-- **Adaptive Top-N Results**: Returns top 5–10 candidates based on how many resumes are uploaded
-- **Smart Name Extraction**: Extracts names from resume content first (top lines), with a clean filename fallback
+- **Robust Fallback System**: Graceful fallback for keyword extraction when the OpenAI API is unavailable
+- **Smart Name Extraction**: Automatically extracts and formats candidate names from filenames
 
 ### Technical Highlights
-- **Adaptive Keyword Extraction**: Dynamic keyword extraction using GPT-4's contextual understanding
+- **Adaptive Keyword Extraction**: Dynamic keyword extraction using GPT-4o's contextual understanding
 - **Advanced NLP**: Uses SentenceTransformer embeddings for semantic similarity
 - **Comprehensive Logging**: Detailed audit trail with decorative separators
 - **Modular Architecture**: Clean, maintainable code structure
@@ -30,6 +30,7 @@ A sophisticated AI-powered system that intelligently matches job descriptions wi
 - Internet connection (for OpenAI API)
 
 ### Python Dependencies
+These are managed in `Sprouts/requirements.txt`:
 ```
 streamlit>=1.28.0
 sentence-transformers>=2.2.0
@@ -65,6 +66,8 @@ OPENAI_API_KEY=your_openai_api_key_here
 streamlit run Sprouts/app.py
 ```
 
+If running on Windows and you encounter CUDA or meta device warnings with PyTorch, embeddings are configured to run on CPU by default to avoid device issues.
+
 ##  Architecture
 
 ### Project Structure
@@ -90,40 +93,56 @@ Sprouts/
 ### Core Components
 
 #### 1. **Agent Engine** (`utils/agent.py`)
-- **`extract_candidate_name()`**: Smart name extraction and formatting from filenames
-- **`extract_technical_keywords()`**: GPT-4 powered keyword extraction with fallback
-- **`extract_keywords_enhanced()`**: Rule-based fallback keyword extraction
-- **`find_keyword_matches()`**: Comprehensive keyword matching with variations
-- **`embed_text()`**: Generates text embeddings
-- **`calculate_cosine_similarity()`**: Computes similarity scores
-- **`run_agentic_flow()`**: Main orchestration function
-- **`log_agentic_flow_start()`**: Structured logging for flow initiation
-- **`log_step_header()`**: Step headers with decorative separators
-- **`log_technical_keywords()`**: Clean keyword extraction logging
-- **`log_resume_processing()`**: Resume processing summary logging
-- **`log_similarity_scores()`**: Aligned similarity scores display
-- **`log_agentic_flow_end()`**: Flow completion with top candidate highlight
-- **`log_agent_thought()`**: Detailed logging with timestamps
-- **`log_step_completion()`**: Decorative separator logging
+ - **`extract_candidate_name()`**: Smart name extraction and formatting from filenames
+ - **`extract_technical_keywords()`**: GPT-4o powered keyword extraction with fallback
+ - **`extract_keywords_enhanced()`**: Rule-based fallback keyword extraction
+ - **`find_keyword_matches()`**: Conservative JD→Resume keyword matching
+   - Case-insensitive normalization; multi-word phrases as phrases; single words use word boundaries
+   - Vetted variants: e.g., "data science"↔"data scientist", "jupyter notebook"↔"jupyter", "ci/cd"↔"cicd"
+   - Strict verbatim terms required: "remote sensing", "Intelligence Community", "TS/SCI", "CI poly", "Databricks"; for "synthetic aperture radar", the phrase or "sar" is accepted
+   - No new keywords beyond JD set; if uncertain, exclude
+ - **`embed_text()`**: Generates text embeddings
+ - **`calculate_cosine_similarity()`**: Computes similarity scores
+ - **`run_agentic_flow()`**: Main orchestration function; ranks candidates, writes `outputs/recommended_candidates.txt`, and returns top N (1–9: all; 10+: top 10)
+ - **`log_agentic_flow_start()`**: Structured logging for flow initiation
+ - **`log_step_header()`**: Step headers with decorative separators
+ - **`log_technical_keywords()`**: Clean keyword extraction logging
+ - **`log_resume_processing()`**: Resume processing summary logging
+ - **`log_similarity_scores()`**: Aligned similarity scores display
+ - **`log_agentic_flow_end()`**: Flow completion with top candidate highlight
+ - **`log_agent_thought()`**: Detailed logging with timestamps
+ - **`log_step_completion()`**: Decorative separator logging
 
 #### 2. **File Parser** (`utils/parser.py`)
 - Supports PDF format
 - Robust error handling for corrupted files
 
 #### 3. **Embedding System** (`utils/embedding.py`)
-- Uses SentenceTransformer 'all-MiniLM-L6-v2' model (default)
-- Model caching for performance optimization
-- Support for multiple embedding providers (OpenAI, BAAI) - available but not used in main flow
+- Default: SentenceTransformer 'all-MiniLM-L6-v2' on CPU (cached)
+- Optional providers (not used by default): OpenAI `text-embedding-3-large`, BAAI `bge-large-en-v1.5`
+- Long inputs are chunked by words, encoded, mean-pooled, and L2-normalized
+- Embeddings are returned as NumPy arrays for CPU-based cosine math
 
 #### 4. **Similarity Computation** (`utils/similarity.py`)
-- Cosine similarity calculation
-- Efficient vector operations
-- Normalized similarity scores
+- Cosine similarity calculation using NumPy dot products
+- Full-document comparison: embeddings are computed over chunks and mean-pooled
+- Returns a list of float scores aligned to input resumes
+
+##### Computation Details
+- We compute cosine similarity between the job embedding and each resume embedding:
+  - Formula: cos_sim(a, b) = (a · b) / (||a|| · ||b||)
+  - Implementation:
+    ```python
+    score = np.dot(job_vec, emb_vec) / (np.linalg.norm(job_vec) * np.linalg.norm(emb_vec))
+    ```
+- The job description is embedded once; each resume is embedded once; we then score each resume vs the job.
 
 #### 5. **AI Summaries** (`utils/gpt_summary.py`)
-- GPT-4o powered candidate fit summaries
-- Personalized explanations for each match
-- Error handling for API failures
+- GPT-4o powered candidate fit summaries using `openai>=1.0.0` client API
+- Strictly resume-grounded: summaries only reference items present in the resume
+- 4–5 sentence rationale per candidate aligned to the job description (optional last sentence may note "transferable.")
+- Uses matched keywords to focus on overlap; low temperature to reduce irrelevant terms
+- Graceful error return string on failures
 
 ##  Usage
 
@@ -134,7 +153,7 @@ streamlit run Sprouts/app.py
 
 ### 2. Input Job Description
 - Paste or type the job description in the text area
-- The system will automatically extract relevant technical keywords using GPT-4
+- The system will automatically extract relevant technical keywords using GPT-4o
 
 ### 3. Upload Resumes
 - Upload multiple resume files
@@ -152,6 +171,12 @@ streamlit run Sprouts/app.py
 - **Keyword Matches**: Specific skills/technologies found in each resume
 - **AI Summary**: Personalized fit explanation
 - **Download Results**: Export recommendations and logs
+ - **Number of Candidates**: Up to 10 are shown. If there are 1–9 resumes, all are listed; if there are 10 or more, only the top 10 are shown.
+ - **Ranking Details**: Overall rank score blends document-level cosine, max chunk similarity, and keyword coverage.
+
+### 6. Download Files
+- **Recommendations**: `outputs/recommended_candidates.txt`
+- **Agent Log**: `logs/agent_thoughtlog.txt`
   
 ##  Deployment
 
@@ -169,31 +194,32 @@ The app is publicly deployed and accessible here:
 
 ### 1. **Intelligent Keyword Extraction**
 ```python
-# GPT-4 analyzes job description and extracts relevant technical terms
+# GPT-4o analyzes job description and extracts relevant technical terms
 keywords = extract_technical_keywords(job_description, openai_api_key)
 # Returns: ['python', 'openai', 'langchain', 'fastapi', 'devops', ...]
 
-# Fallback to rule-based extraction if GPT-4 fails
+# Fallback to rule-based extraction if the OpenAI API fails
 if gpt_fails:
     keywords = extract_keywords_enhanced(job_description)
 ```
 
 ### 2. **Smart Name Extraction**
 ```python
-# Prefer name from resume text; fallback to filename
-name = extract_candidate_name_from_text(resume_text) or extract_candidate_name(filename)
+# Extract and format candidate names from filenames (with text-based fallback)
+name = extract_candidate_name(filename, resume_text)
 # Examples:
 # 'piotr_migdal_resume.pdf' → 'Piotr Migdal'
 # 'cristian_garcia.pdf' → 'Cristian Garcia'
 # 'john-doe-cv.pdf' → 'John Doe'
 ```
 
-### 3. **Comprehensive Keyword Matching**
+### 3. **Conservative Keyword Matching**
 ```python
-# Search through complete resume text with intelligent variations
+# Match JD keywords against resume with vetted variants and strict terms
 matched_keywords = find_keyword_matches(resume_text, job_keywords)
-# Handles variations: 'python' → ['py', 'python3'], 'javascript' → ['js', 'node.js']
-# Returns: ['python', 'openai', 'fastapi'] - keywords found in resume
+# Examples of handled variants: 'data science'↔'data scientist', 'jupyter notebook'↔'jupyter', 'ci/cd'↔'cicd'
+# Strict verbatim terms required: 'remote sensing', 'Intelligence Community', 'TS/SCI', 'CI poly', 'Databricks'; 'synthetic aperture radar' or 'sar'
+# Returns: ['python', 'jupyter notebook', 'data science'] - only keywords supported by the resume
 ```
 
 ### 4. **Semantic Embedding**
@@ -207,6 +233,15 @@ resume_embedding = embed_text(resume_text, model)
 ```python
 # Compute cosine similarity between job and resume
 similarity = calculate_cosine_similarity(job_embedding, resume_embedding)
+```
+
+### 6. **Ranking (Blended Score)**
+```
+# We blend three signals to rank candidates:
+# - 60% document-level cosine similarity
+# - 30% max chunk-level similarity (captures localized strong matches)
+# - 10% keyword coverage (matched_keywords / total_keywords)
+overall_score = 0.6 * cosine + 0.3 * max_chunk + 0.1 * keyword_coverage
 ```
 
 ### 6. **AI Summary Generation**
@@ -229,8 +264,12 @@ log_agentic_flow_end()             # END with top candidate highlight
 ##  Output Format
 
 ### Candidate Results Display
+Selection count:
+- If you upload 1–9 resumes, all are shown in ranked order.
+- If you upload 10 or more resumes, the app shows the top 10.
+
 ```
-Top N Recommended Candidates
+Top N Recommended Candidates (up to 10)
 
 1. Aleksandr Nikitin
 AI Summary: Aleksandr Nikitin is a strong fit for the role at Pragmatike due to his extensive experience in developing and deploying data-driven solutions, as demonstrated by his work at Tochka Bank where he led the design and implementation of machine learning models. His proficiency in Python and familiarity with cloud environments, combined with his strong communication and team collaboration skills, align well with the job's requirements. Additionally, his background in leading projects in high-paced environments and his commitment to professional development in AI/ML systems make him an excellent candidate for contributing to Pragmatike's innovative projects in Cloud Computing, Blockchain, and Artificial Intelligence.
@@ -238,7 +277,7 @@ AI Summary: Aleksandr Nikitin is a strong fit for the role at Pragmatike due to 
 Keyword Matches (5): ai, machine learning, ml, python, go
 
 Score:
-- Cosine Similarity: 0.5751
+- Overall Rank Score: 0.6123 | Cosine: 0.5751 | Max-Chunk: 0.6480 | Keyword Coverage: 0.32
 
 ---
 
@@ -276,9 +315,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 ### Model Configuration
 - **Embedding Model**: `all-MiniLM-L6-v2` (SentenceTransformer)
-- **GPT Models**:
-  - GPT-4 for keyword extraction
-  - GPT-4o for candidate fit summaries
+- **OpenAI Model**: `gpt-4o` (for both keyword extraction and summaries)
 - **Temperature**: 0.1 (for consistent keyword extraction)
 - **Fallback Model**: Rule-based keyword extraction
 
@@ -368,7 +405,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 2. **File Upload**: Check file format and size limits
 3. **Memory Issues**: Close other applications if processing large batches
 4. **Network Problems**: Check internet connection for API calls
-5. **Fallback Mode**: System will use rule-based extraction if GPT-4 fails
+5. **Fallback Mode**: System will use rule-based extraction if the OpenAI API fails
 
 ### Getting Help
 - Check the logs in `logs/agent_thoughtlog.txt` for detailed error information
@@ -378,7 +415,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ##  Acknowledgments
 
-- **OpenAI**: For GPT-4 and GPT-4o APIs
+- **OpenAI**: For GPT-4o API
 - **SentenceTransformers**: For semantic similarity computation
 - **Streamlit**: For the web application framework
 - **PyMuPDF**: For PDF processing capabilities

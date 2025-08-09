@@ -1,43 +1,25 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[2025-08-08T16:42:35.922703] START: Agentic flow initiated with technical keyword extraction and cosine similarity.
+[2025-08-08T21:28:29.027457] START: Agentic flow initiated with technical keyword extraction and cosine similarity.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[2025-08-08T16:42:35.925365] EXTRACT_KEYWORDS: Extracting technical keywords from job description.
-[2025-08-08T16:42:42.071419] TECHNICAL_KEYWORDS: Extracted keywords: ['data scientist', 'data analysis', 'visualization', 'data mining', 'data analytics', 'predictive analysis', 'data bricks', 'pyspark', 'unity catalog', 'machine learning', 'databricks', 'pyspark mllib', 'unity catalog', 'model management', 'governance', 'neo4j', 'fraud analytic tools', 'data management', 'advanced analytic techniques', 'data sciences', 'database structures', 'data organization', 'sql scripts', 'excel', 'data analysis in excel', 'graph', 'chart', 'pivot table', 'vlookup', 'functions', 'python', 'power bi', 'sql', 'tableau', 'sas', 'software engineering', 'big data analytics', 'artificial intelligence', 'machine learning solutions', 'devops', 'data center support']
+[2025-08-08T21:28:29.028911] EXTRACT_KEYWORDS: Extracting technical keywords from job description.
+[2025-08-08T21:28:31.605561] TECHNICAL_KEYWORDS: Extracted keywords: ['cloud computing', 'blockchain', 'artificial intelligence', 'machine learning models', 'datasets', 'python', 'typescript', 'go', 'pytorch', 'transformers', 'llama-factory', 'vllm', 'megatron-lm', 'cuda', 'cloud environments', 'aws', 'gcp', 'azure', 'containerized deployments', 'docker', 'kubernetes', 'ci/cd', 'devops', 'systems-level optimization']
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[2025-08-08T16:42:42.333924] RESUME_COUNT: Processed 15 resumes: ['Aaron Cruz', 'Abhilash', 'Abhishak Varshney', 'Aleksandr Nikitin', 'Aaron Cruz', 'Abhilash', 'Abhishak Varshney', 'Aleksandr Nikitin', 'Chandra Bathula', 'Cristian Garcia', 'Muhammad Jillani', 'Piotr Migdał', 'Elias Farber', 'Richa Prakash', 'Vladislav Serkov']
+[2025-08-08T21:28:31.941306] RESUME_COUNT: Processed 12 resumes: ['Meghana Doddapuneni', 'Aaron Evans', 'Abhilash', 'Abhishak Varshney', 'Aleksandr Nikitin', 'Chandra Prakash', 'Cristian Garcia', 'Muhammad Ghulam', 'Piotr Migdal', 'Elias Weston', 'Richa Prakash', 'Serkov Vladislav']
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[2025-08-08T16:42:42.335949] EMBEDDING_AND_SIMILARITY: Generating embeddings and computing cosine similarity scores.
-[2025-08-08T16:43:05.431313] SIMILARITY_SCORES:
-  1. Aaron Cruz: 0.5307
-  2. Elias Farber: 0.4985
-  3. Aleksandr Nikitin: 0.4928
-  4. Abhilash: 0.4473
-  5. Vladislav Serkov: 0.4292
-  6. Richa Prakash: 0.4085
-  7. Piotr Migdał: 0.3993
-  8. Cristian Garcia: 0.3167
-  9. Muhammad Jillani: 0.3162
-  10. Chandra Bathula: 0.3124
-  11. Abhishak Varshney: 0.2960
+[2025-08-08T21:28:31.943723] EMBEDDING_AND_SIMILARITY: Generating embeddings and computing cosine similarity scores.
+[2025-08-08T21:29:07.750629] SIMILARITY_SCORES:
+  1. Muhammad Ghulam: 0.6753
+  2. Meghana Doddapuneni: 0.5556
+  3. Serkov Vladislav: 0.6232
+  4. Cristian Garcia: 0.5516
+  5. Chandra Prakash: 0.5284
+  6. Aleksandr Nikitin: 0.5151
+  7. Richa Prakash: 0.5148
+  8. Aaron Evans: 0.5219
+  9. Elias Weston: 0.4718
+  10. Piotr Migdal: 0.4222
+  11. Abhilash: 0.4259
+  12. Abhishak Varshney: 0.4085
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[2025-08-08T16:43:05.435195] END: Agentic flow completed. **Top candidate: Aaron Cruz with score 0.5307**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[2025-08-08T16:43:36.410749] SIMILARITY_SCORES:
-  1. Aaron Cruz: 0.5307
-  2. Aaron Cruz: 0.5307
-  3. Elias Farber: 0.4985
-  4. Aleksandr Nikitin: 0.4928
-  5. Aleksandr Nikitin: 0.4928
-  6. Abhilash: 0.4473
-  7. Abhilash: 0.4473
-  8. Vladislav Serkov: 0.4292
-  9. Richa Prakash: 0.4085
-  10. Piotr Migdał: 0.3993
-  11. Cristian Garcia: 0.3167
-  12. Muhammad Jillani: 0.3162
-  13. Chandra Bathula: 0.3124
-  14. Abhishak Varshney: 0.2960
-  15. Abhishak Varshney: 0.2960
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[2025-08-08T16:43:36.412120] END: Agentic flow completed. **Top candidate: Aaron Cruz with score 0.5307**
+[2025-08-08T21:29:07.753163] END: Agentic flow completed. **Top candidate: Muhammad Ghulam with score 0.6373**
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
