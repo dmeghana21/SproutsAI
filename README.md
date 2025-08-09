@@ -182,7 +182,7 @@ streamlit run Sprouts/app.py
 
 The app is publicly deployed and accessible here:
 
- **[Live Candidate Recommendation Engine App URL](https://dmeghana21-sprouts-ai--sproutsapp-urldgi.streamlit.app)**
+ **[Live Candidate Recommendation Engine App URL](https://dmeghana21-sproutsai-candidate-recommendation-engine.streamlit.app/)**
 
 ###  API Key Requirement
 
@@ -277,8 +277,7 @@ AI Summary: Aleksandr Nikitin is a strong fit for the role at Pragmatike due to 
 Keyword Matches (5): ai, machine learning, ml, python, go
 
 Score:
-- Overall Rank Score: 0.6123 | Cosine: 0.5751 | Max-Chunk: 0.6480 | Keyword Coverage: 0.32
-
+- Cosine Similarity: 0.5751 
 ---
 
 2. Serkov Vladislav
@@ -293,12 +292,14 @@ Score:
 ### Candidate Data Structure
 ```json
 {
-  "name": "Aleksandr Nikitin",
-  "score": 0.5751,
+  "name": "Candidate Name",
+  "score": 0.6123,
   "similarity": 0.5751,
-  "keyword_matches": ["ai", "machine learning", "ml", "python", "go"],
-  "keyword_count": 5,
-  "summary": "Aleksandr Nikitin is a strong fit for the role..."
+  "max_chunk_similarity": 0.6480,
+  "keyword_coverage": 0.32,
+  "keyword_matches": ["python", "jupyter notebook", "data science"],
+  "keyword_count": 3,
+  "summary": "4–5 sentence, resume-grounded summary here."
 }
 ```
 
